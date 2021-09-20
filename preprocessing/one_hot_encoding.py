@@ -43,7 +43,7 @@ class OneHotEncoder:
 
     # Class attributes
 
-    def __init__(self, max_cat=None, n_min=1, load_if_exists=False, drop_last=True, drop_na=True, verbose=False,
+    def __init__(self, max_cat=None, n_min=1, load_if_exists=False,  drop_na=True, verbose=False,
                  filename="dict_nominal_columns.pickle"):
 
         # Instance attributes
@@ -52,7 +52,6 @@ class OneHotEncoder:
         self.n_min = n_min
         self.load_if_exists = load_if_exists
         self.verbose = verbose
-        self.drop_last = drop_last
         self.drop_na = drop_na
         self.filename = filename
         self.categories = {}
@@ -64,7 +63,9 @@ class OneHotEncoder:
 
         if os.path.isfile(self.filename) & self.load_if_exists:
             pickle_in_unique = open(self.filename, "rb")
-            self.categories.update(pickle.load(pickle_in_unique))
+            d = pickle.load(pickle_in_unique)
+            self.categories.update(d["categories"])
+            self.info_dict.update(d["info"])
 
         else:
             for column in data.columns:
@@ -81,19 +82,20 @@ class OneHotEncoder:
                         msg = f"{self.max_cat} selected from {len(categories)} categories."
                         self.info_dict.update({column: msg})
 
-            pickle.dump(self.info_dict, open(self.filename, 'wb'))
+            pickle.dump({"categories": self.categories, "info": self.info_dict},
+                        open(self.filename, 'wb'))
 
         self.to_encode = list(self.categories.keys())
 
         return self
 
-    def transform(self, data, drop_remain=True):
+    def transform(self, data, drop_last=False, drop_remain=False):
 
         for count, column in enumerate(self.to_encode, start=1):
             if column in data.columns:
                 unique_values_column = self.categories[column]
 
-                if self.drop_last & (column not in self.info_dict):
+                if drop_last & (column not in self.info_dict):
                     unique_values_column = unique_values_column[:-1]
 
                 msg_01 = f"Encoding: {column} ..."
