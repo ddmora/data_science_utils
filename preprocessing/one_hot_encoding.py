@@ -15,8 +15,7 @@ class OneHotEncoder:
 
     Parameters
     ----------
-    max_cat: int, default=None
-        The maximum number of categories per column
+
     n_min: int, default=2
         The minimum number of observations to be classified as a category
     load_if_exists: bool, default=False
@@ -41,20 +40,18 @@ class OneHotEncoder:
 
     """
 
-    # Class attributes
-
-    def __init__(self, max_cat=None, n_min=1, load_if_exists=False,  drop_na=True, verbose=False,
+    def __init__(self, n_min=1, load_if_exists=False,  drop_na=True, verbose=False,
                  filename="dict_nominal_columns.pickle"):
 
         # Instance attributes
 
-        self.max_cat = max_cat
         self.n_min = n_min
         self.load_if_exists = load_if_exists
         self.verbose = verbose
         self.drop_na = drop_na
         self.filename = filename
         self.categories = {}
+        self.frequency = {}
         self.to_encode = []
         self.new_columns = []
         self.info_dict = {}
@@ -65,60 +62,76 @@ class OneHotEncoder:
             pickle_in_unique = open(self.filename, "rb")
             d = pickle.load(pickle_in_unique)
             self.categories.update(d["categories"])
-            self.info_dict.update(d["info"])
+            self.frequency.update(d["frequency"])
 
         else:
-            for column in data.columns:
-                if data[column].dtype == object:
-                    counts = data[column].value_counts(dropna=self.drop_na).sort_values(ascending=False)
-                    counts = counts[counts >= self.n_min]
-                    categories = counts.index.tolist()
+            columns_to_encode = [column for column in data.columns if data[column].dtype == object]
+            for column in columns_to_encode:
+                # Frequency
+                counts = data[column].value_counts(dropna=self.drop_na).sort_values(ascending=False)
+                self.frequency.update({column: counts.to_dict()})
 
-                    if self.max_cat is None:
-                        self.categories.update({column: categories})
+                # Categories
+                categories = counts[counts >= self.n_min].index.tolist()
+                self.categories.update({column: categories})
 
-                    else:
-                        self.categories.update({column: categories[:self.max_cat]})
-                        msg = f"{self.max_cat} selected from {len(categories)} categories."
-                        self.info_dict.update({column: msg})
-
-            pickle.dump({"categories": self.categories, "info": self.info_dict},
+            pickle.dump({"categories": self.categories,
+                         "frequency": self.frequency},
                         open(self.filename, 'wb'))
 
         self.to_encode = list(self.categories.keys())
 
         return self
 
-    def transform(self, data, drop_last=False, drop_remain=False):
+    def transform(self, data,  max_cat=None, drop_last=False, drop_remain=False):
 
-        for count, column in enumerate(self.to_encode, start=1):
-            if column in data.columns:
-                unique_values_column = self.categories[column]
+        """
 
-                if drop_last & (column not in self.info_dict):
-                    unique_values_column = unique_values_column[:-1]
+        Parameters
+        ----------
+        data
+        max_cat
+        drop_last
+        drop_remain
 
-                msg_01 = f"Encoding: {column} ..."
-                msg_02 = f"Encoding column number {count} from {len(self.to_encode)} original columns."
-                msg_03 = f"Number of unique values: {len(unique_values_column)}"
+        Returns
+        -------
 
-                for n_val, val in enumerate(unique_values_column, start=1):
+        """
 
-                    msg_04 = f"Encoding category number {n_val} from {len(unique_values_column)}."
-                    name_temp = column + "_" + str(val)
-                    self.new_columns.append(name_temp)
-                    msg_05 = f"Total of new columns created {len(self.new_columns)}."
+        self.new_columns = []
 
-                    print_if(self.verbose, msg_01)
-                    print_if(self.verbose, msg_02)
-                    print_if(self.verbose, msg_03)
-                    print_if(self.verbose, msg_04)
-                    print_if(self.verbose, msg_05)
+        columns_to_encode = [x for x in self.to_encode if x in data.columns]
 
-                    if self.verbose:
-                        clear_output(wait=True)
+        for count, column in enumerate(columns_to_encode, start=1):
 
-                    data[name_temp] = (data[column] == val) * 1.0
+            unique_values_column = self.categories[column]
+
+            if drop_last:
+                unique_values_column = unique_values_column[:-1]
+
+            if max_cat is not None:
+                unique_values_column = unique_values_column[:max_cat]
+
+            msg_01 = f"Encoding: {column} ..."
+            msg_02 = f"Encoding column number {count} from {len(columns_to_encode)} original columns."
+            msg_03 = f"Number of unique values to encode: {len(unique_values_column)}"
+
+            for n_val, val in enumerate(unique_values_column, start=1):
+
+                msg_04 = f"Encoding category number {n_val} from {len(unique_values_column)}."
+                name_temp = column + "_" + str(val)
+                self.new_columns.append(name_temp)
+
+                print_if(self.verbose, msg_01)
+                print_if(self.verbose, msg_02)
+                print_if(self.verbose, msg_03)
+                print_if(self.verbose, msg_04)
+
+                if self.verbose:
+                    clear_output(wait=True)
+
+                data[name_temp] = (data[column] == val) * 1.0
 
                 msg_05 = f"Total of new columns created {len(self.new_columns)}."
                 print_if(self.verbose, msg_05)
