@@ -1,15 +1,34 @@
 import numpy as np
 import pandas as pd
-from .metrics import ks_stat
-from IPython.display import  clear_output
+from IPython.display import clear_output
 from scipy.stats import t, sem
+from scipy.stats import ks_2samp
+from sklearn.metrics import make_scorer, balanced_accuracy_score
 from sklearn.metrics import max_error, r2_score, mean_absolute_error, median_absolute_error, mean_squared_error
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, accuracy_score, f1_score, log_loss
 from sklearn.utils import resample
 
 
-def evaluate_classifier(y, X, classifier, verbose=True, digits=3):
+def ks_stat(y, yhat):
 
+    """
+
+    This function calculates the Kolmogorov KS-Statistic
+
+    Params
+    ------
+
+    y: list-array like
+       A list or an array of a  binary or continous variable.
+    y_hat: list-array-like
+
+
+
+    """
+    return ks_2samp(yhat[y == 1], yhat[y != 1]).statistic
+
+
+def evaluate_classifier(y, X, classifier, verbose=True, digits=3):
     """
 
     Evaluate a scikit-learn classifier with 'predict' and 'predict_proba' methods on it.
@@ -70,7 +89,6 @@ def evaluate_classifier(y, X, classifier, verbose=True, digits=3):
 
 
 def evaluate_regressor(y_true, y_pred, verbose=True, digits=3):
-
     """
 
     Calculates the following metrics.
@@ -134,7 +152,6 @@ def evaluate_regressor(y_true, y_pred, verbose=True, digits=3):
 
 
 def confidence_interval(sample, degrees_freedom, confidence_level=0.95, return_score='both'):
-
     sample_mean = np.mean(sample)
     sse = sem(sample)
 
@@ -146,8 +163,8 @@ def confidence_interval(sample, degrees_freedom, confidence_level=0.95, return_s
     else:
         return t.interval(alpha=confidence_level, df=degrees_freedom, loc=sample_mean, scale=sse)
 
-class BootstrapValidation:
 
+class BootstrapValidation:
     stats = []
     seeds = {}
     results = {}
@@ -237,3 +254,63 @@ class BootstrapValidation:
         print('Exploded:', boom)
 
         return self
+
+
+def get_scoring(target="binary"):
+
+    if target == 'binary':
+        ks_scorer = make_scorer(ks_stat, needs_proba=True)
+        roc_auc = make_scorer(roc_auc_score, needs_proba=True, greater_is_better=True, needs_threshold=False)
+        accuracy = make_scorer(accuracy_score, needs_proba=False, greater_is_better=True, needs_threshold=False)
+        balanced_accuracy = make_scorer(balanced_accuracy_score, needs_proba=False, greater_is_better=True,
+                                        needs_threshold=False)
+        recall = make_scorer(recall_score, needs_proba=False, greater_is_better=True, needs_threshold=False)
+        precision = make_scorer(precision_score, needs_proba=False, greater_is_better=True, needs_threshold=False)
+        f1 = make_scorer(f1_score, needs_proba=False, greater_is_better=True, needs_threshold=False)
+        logloss = make_scorer(log_loss, needs_proba=True, greater_is_better=False)
+
+        scoring = {'accuracy': accuracy,
+                   'balanced_accuracy': balanced_accuracy,
+                   'roc_auc': roc_auc,
+                   'log_loss': logloss,
+                   'recall': recall,
+                   'precision': precision,
+                   'f1_score': f1,
+                   'ks_score': ks_scorer}
+        return scoring
+
+
+def print_report(y_true, y_pred, y_proba):
+    print("Ks : {:.2f}".format(ks_stat(y_true, y_proba)))
+    print("Log-Loss : {:.3f}".format(log_loss(y_true, y_proba)))
+    print("Roc-Auc : {:.3f}".format(roc_auc_score(y_true, y_proba)))
+    print("Accuracy : {:.3f}".format(accuracy_score(y_true, y_pred)))
+    print("Balanced Accuracy : {:.3f}".format(balanced_accuracy_score(y_true, y_pred)))
+    print("F1 : {:.3f}".format(f1_score(y_true, y_pred)))
+    print("Precision : {:.3f}".format(precision_score(y_true, y_pred)))
+    print("Recall : {:.3f}".format(recall_score(y_true, y_pred)))
+
+
+def view_results(results, precision=2):
+
+    results_df = pd.DataFrame.from_dict(results, orient="columns")
+
+    metrics_ = ['ks_score', "log_loss", 'roc_auc', 'accuracy', 'f1_score', 'recall', 'precision']
+
+    train_metrics = ['train_ks_score', 'train_log_loss', 'train_roc_auc', 'train_accuracy',
+                     'train_f1_score', 'train_recall', 'train_precision']
+
+    test_metrics = ['test_ks_score', 'test_log_loss', 'test_roc_auc', 'test_accuracy',
+                    'test_f1_score', 'test_recall', 'test_precision']
+
+    print("Train results:", '\n')
+
+    print(results_df.loc[:, train_metrics].describe().rename(
+        columns=dict(zip(train_metrics, metrics_))).loc[["mean", "min", "max"]].round(precision))
+
+    print("\n")
+
+    print("Validation results:", '\n')
+
+    print(results_df.loc[:, test_metrics].describe().rename(
+        columns=dict(zip(test_metrics, metrics_))).loc[["mean", "min", "max"]].round(precision))
